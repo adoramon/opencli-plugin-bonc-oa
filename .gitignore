@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+*.log
+
+# Never commit real OA captures, private fixtures, or attachment samples.
+captures/*
+fixtures/private/*
+attachments/*
+*.har
+*.cookie
+*.token
+raw-*.json
+.dbg-*.html

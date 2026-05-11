@@ -1,0 +1,6 @@
+{
+  "name": "bonc-oa",
+  "version": "0.1.0",
+  "opencli": ">=1.7.0",
+  "description": "Sanitized OpenCLI plugin for BONC OA query, approval, and expense submission workflows."
+}
