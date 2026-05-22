@@ -42,10 +42,14 @@ export const todosCommand = cli({
     { name: 'type', type: 'string', help: 'Filter by task type (e.g. 审批, 报销, 请假)' },
     { name: 'status', type: 'string', default: 'pending', help: 'Task status filter (pending/done)' },
   ],
-  columns: ['taskId', 'title', 'type', 'receivedAt'],
+  columns: ['taskId', 'title', 'type', 'receivedAt', 'result', 'processedAt'],
   func: async (page, kwargs) => {
     const limit = normalizeLimit(kwargs.limit);
-    await gotoUnlessAlreadyOa(page, process.env.BONC_OA_TODO_LIST_URL || getBaseUrl(), { waitUntil: 'load', settleMs: 4000 });
+    const isDone = kwargs.status === 'done';
+    const targetUrl = isDone
+      ? (process.env.BONC_OA_DONE_LIST_URL || getBaseUrl())
+      : (process.env.BONC_OA_TODO_LIST_URL || getBaseUrl());
+    await gotoUnlessAlreadyOa(page, targetUrl, { waitUntil: 'load', settleMs: 4000 });
     await ensureLoggedIn(page, kwargs);
     await waitForWorkbench(page);
 
