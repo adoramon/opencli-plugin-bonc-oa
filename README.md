@@ -15,6 +15,23 @@ opencli bonc-oa reject <taskId> --comment "原因" --confirm true
 opencli bonc-oa submit-expense --title "差旅报销" --amount 128.50 --date 2026-05-11 --category "travel" --description "客户现场支持" --attachments /tmp/a.pdf,/tmp/b.jpg --confirm true
 ```
 
+### Todo List Output
+
+`opencli bonc-oa todos` logs in or reuses the current Chrome session, opens the BONC OA workbench, then reads the pending-task table inside the workbench frame. The public command intentionally returns only the fields needed for follow-up actions:
+
+```json
+[
+  {
+    "taskId": "5d92488c-49ff-4736-8e27-e860d6ab25ea",
+    "title": "(填写报销单)的日常费用报销单:",
+    "type": "日常费用报销申请单",
+    "receivedAt": "2026-05-22 10:41:17"
+  }
+]
+```
+
+The command does not print session IDs, cookies, detail URLs, employee profile metadata, or workflow payloads. Use the returned `taskId` with `todo`, `approve`, or `reject` after verifying the target task in Chrome.
+
 Write commands are safe by default. Without `--confirm true`, they only return a preview row and do not click the final submit button.
 
 `--confirm true` is the explicit high-risk switch for real workflow actions. Use it only after checking the preview output and the target task or form in Chrome.
