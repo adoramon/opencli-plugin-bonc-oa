@@ -3,7 +3,7 @@ import { cli, Strategy } from '@jackwener/opencli/registry';
 import { OA_BROWSER_OPTIONS } from './lib/command-options.js';
 import { gotoUnlessAlreadyOa } from './lib/navigation.js';
 import { getBaseUrl, parseLimit, SITE } from './lib/validation.js';
-import { todosScript } from './lib/browser-scripts.js';
+import { openWorkbenchScript, todosScript } from './lib/browser-scripts.js';
 import { ensureLoggedIn, LOGIN_ARGS } from './lib/session.js';
 
 function normalizeLimit(raw) {
@@ -12,6 +12,19 @@ function normalizeLimit(raw) {
   } catch (error) {
     throw new ArgumentError(error.message);
   }
+}
+
+async function waitForWorkbench(page) {
+  let state;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    state = await page.evaluate(openWorkbenchScript());
+    if (state?.reason === 'workbench-ready' && state?.dataUrl) return state;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  if (!state?.ok) {
+    throw new CommandExecutionError(`BONC OA workbench not available: ${state?.reason || 'unknown'} at ${state?.url || 'unknown url'}`);
+  }
+  return state;
 }
 
 export const todosCommand = cli({
@@ -32,6 +45,7 @@ export const todosCommand = cli({
     const limit = normalizeLimit(kwargs.limit);
     await gotoUnlessAlreadyOa(page, process.env.BONC_OA_TODO_LIST_URL || getBaseUrl(), { waitUntil: 'load', settleMs: 4000 });
     await ensureLoggedIn(page, kwargs);
+    await waitForWorkbench(page);
     const rows = await page.evaluate(todosScript(limit));
     if (!Array.isArray(rows)) {
       throw new CommandExecutionError('BONC OA todos extraction did not return a row array');
