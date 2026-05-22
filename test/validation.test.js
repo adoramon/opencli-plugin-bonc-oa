@@ -8,9 +8,11 @@ import {
   normalizeApprovalArgs,
   normalizeExpenseArgs,
   parseAmount,
+  parseAttachments,
   parseConfirm,
   parseIsoDate,
   parseLimit,
+  resolveTaskUrl,
 } from '../lib/validation.js';
 
 describe('configuration helpers', () => {
@@ -30,6 +32,11 @@ describe('primitive validation', () => {
   it('parses confirm as an explicit true flag only', () => {
     assert.equal(parseConfirm(true), true);
     assert.equal(parseConfirm('true'), true);
+    assert.equal(parseConfirm('TRUE'), true);
+    assert.equal(parseConfirm(' true '), false);
+    assert.equal(parseConfirm(1), false);
+    assert.equal(parseConfirm('1'), false);
+    assert.equal(parseConfirm('yes'), false);
     assert.equal(parseConfirm('false'), false);
     assert.equal(parseConfirm(undefined), false);
   });
@@ -47,6 +54,38 @@ describe('primitive validation', () => {
   });
 });
 
+describe('task URL resolution', () => {
+  it('uses a configured detail URL template for task ids', () => {
+    assert.equal(
+      resolveTaskUrl('TASK 1', {
+        BONC_OA_BASE_URL: 'https://oa.example.test',
+        BONC_OA_TODO_DETAIL_URL_TEMPLATE: 'https://oa.example.test/todo/{taskId}',
+      }),
+      'https://oa.example.test/todo/TASK%201',
+    );
+  });
+
+  it('accepts absolute task detail URLs', () => {
+    assert.equal(
+      resolveTaskUrl('https://oa.example.test/workflow?id=TASK-1', {
+        BONC_OA_BASE_URL: 'https://oa.example.test',
+      }),
+      'https://oa.example.test/workflow?id=TASK-1',
+    );
+  });
+
+  it('falls back to the base URL for opaque task ids without a template', () => {
+    assert.equal(
+      resolveTaskUrl('TASK-1', { BONC_OA_BASE_URL: 'https://oa.example.test///' }),
+      'https://oa.example.test',
+    );
+  });
+
+  it('requires a non-empty task id', () => {
+    assert.throws(() => resolveTaskUrl('   '), /taskId cannot be empty/);
+  });
+});
+
 describe('approval args', () => {
   it('keeps approval writes in preview mode by default', () => {
     const args = normalizeApprovalArgs({ taskId: 'TASK-1', comment: '同意' }, 'approve');
@@ -60,6 +99,11 @@ describe('approval args', () => {
 
   it('requires reject comments', () => {
     assert.throws(() => normalizeApprovalArgs({ taskId: 'TASK-1' }, 'reject'), /comment cannot be empty/);
+  });
+
+  it('uses a default approval comment but still requires a task id', () => {
+    assert.equal(normalizeApprovalArgs({ taskId: 'TASK-1' }, 'approve').comment, '同意');
+    assert.throws(() => normalizeApprovalArgs({ comment: '同意' }, 'approve'), /taskId cannot be empty/);
   });
 });
 
@@ -92,6 +136,7 @@ describe('expense args', () => {
     });
     assert.equal(args.confirm, true);
     assert.deepEqual(args.attachments, [file]);
+    assert.deepEqual(parseAttachments(`${file}, ,`), [file]);
   });
 
   it('rejects missing attachments', () => {

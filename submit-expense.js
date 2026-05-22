@@ -1,7 +1,10 @@
-import { AuthRequiredError, CommandExecutionError, ArgumentError } from '@jackwener/opencli/errors';
+import { CommandExecutionError, ArgumentError } from '@jackwener/opencli/errors';
 import { cli, Strategy } from '@jackwener/opencli/registry';
+import { OA_BROWSER_OPTIONS } from './lib/command-options.js';
+import { gotoUnlessAlreadyOa } from './lib/navigation.js';
 import { getBaseUrl, normalizeExpenseArgs, SITE } from './lib/validation.js';
-import { expenseFillScript, statusScript } from './lib/browser-scripts.js';
+import { expenseFillScript } from './lib/browser-scripts.js';
+import { ensureLoggedIn, LOGIN_ARGS } from './lib/session.js';
 
 function normalize(kwargs) {
   try {
@@ -12,6 +15,7 @@ function normalize(kwargs) {
 }
 
 export const submitExpenseCommand = cli({
+  ...OA_BROWSER_OPTIONS,
   site: SITE,
   name: 'submit-expense',
   access: 'write',
@@ -20,6 +24,7 @@ export const submitExpenseCommand = cli({
   strategy: Strategy.COOKIE,
   browser: true,
   args: [
+    ...LOGIN_ARGS,
     { name: 'title', required: true, help: 'Expense title/subject' },
     { name: 'amount', required: true, help: 'Expense amount, e.g. 128.50' },
     { name: 'date', required: true, help: 'Expense date in YYYY-MM-DD' },
@@ -32,10 +37,21 @@ export const submitExpenseCommand = cli({
   func: async (page, kwargs) => {
     const data = normalize(kwargs);
     const targetUrl = process.env.BONC_OA_EXPENSE_URL || getBaseUrl();
-    await page.goto(targetUrl, { waitUntil: 'load', settleMs: 5000 });
-    const state = await page.evaluate(statusScript());
-    if (!state?.loggedIn) {
-      throw new AuthRequiredError('oa.bonc.com.cn', 'Open BONC OA in Chrome and complete login, then retry.');
+    await gotoUnlessAlreadyOa(page, targetUrl, { waitUntil: 'load', settleMs: 5000 });
+    await ensureLoggedIn(page, kwargs);
+
+    if (!data.confirm) {
+      return [{
+        flowName: data.flowName,
+        title: data.title,
+        amount: data.amount,
+        attachmentCount: data.attachments.length,
+        confirmed: false,
+        status: 'preview',
+        instanceId: '',
+        message: 'preview only; rerun with --confirm true to fill and submit',
+        url: targetUrl,
+      }];
     }
 
     if (data.attachments.length > 0 && data.confirm) {
@@ -57,20 +73,6 @@ export const submitExpenseCommand = cli({
       category: data.category,
       description: data.description,
     }, data.confirm));
-
-    if (!data.confirm) {
-      return [{
-        flowName: data.flowName,
-        title: data.title,
-        amount: data.amount,
-        attachmentCount: data.attachments.length,
-        confirmed: false,
-        status: 'preview',
-        instanceId: '',
-        message: 'preview only; rerun with --confirm true to submit',
-        url: result?.url || targetUrl,
-      }];
-    }
 
     if (!result?.ok || result.status !== 'submitted') {
       throw new CommandExecutionError(

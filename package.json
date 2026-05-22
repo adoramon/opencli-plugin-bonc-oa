@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "description": "OpenCLI plugin for a sanitized BONC OA workflow adapter.",
   "type": "module",
+  "main": "./index.js",
+  "exports": "./index.js",
   "private": false,
   "scripts": {
     "test": "node --test test/*.test.js"
