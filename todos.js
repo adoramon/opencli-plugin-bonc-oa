@@ -21,7 +21,7 @@ async function waitForWorkbench(page) {
     if (state?.reason === 'workbench-ready' && state?.dataUrl) return state;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-  if (!state?.ok) {
+  if (!state?.dataUrl) {
     throw new CommandExecutionError(`BONC OA workbench not available: ${state?.reason || 'unknown'} at ${state?.url || 'unknown url'}`);
   }
   return state;
@@ -39,6 +39,8 @@ export const todosCommand = cli({
   args: [
     ...LOGIN_ARGS,
     { name: 'limit', type: 'int', default: 20, help: 'Number of pending tasks to return (1-100)' },
+    { name: 'type', type: 'string', help: 'Filter by task type (e.g. 审批, 报销, 请假)' },
+    { name: 'status', type: 'string', default: 'pending', help: 'Task status filter (pending/done)' },
   ],
   columns: ['taskId', 'title', 'type', 'receivedAt'],
   func: async (page, kwargs) => {
@@ -46,10 +48,26 @@ export const todosCommand = cli({
     await gotoUnlessAlreadyOa(page, process.env.BONC_OA_TODO_LIST_URL || getBaseUrl(), { waitUntil: 'load', settleMs: 4000 });
     await ensureLoggedIn(page, kwargs);
     await waitForWorkbench(page);
-    const rows = await page.evaluate(todosScript(limit));
-    if (!Array.isArray(rows)) {
-      throw new CommandExecutionError('BONC OA todos extraction did not return a row array');
-    }
-    return rows.slice(0, limit);
+
+    const extractWithRetry = async (attempt = 0) => {
+      const filter = { type: kwargs.type || '', status: kwargs.status || 'pending' };
+      const result = await page.evaluate(todosScript(limit, filter));
+      const rows = Array.isArray(result) ? result : [];
+      if (rows.length === 0 && attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        return extractWithRetry(attempt + 1);
+      }
+      if (rows.length === 0 && attempt === 2) {
+        const debug = await page.evaluate(() => {
+          const taskRows = Array.from(document.querySelectorAll('#tableData tr.tdata, table#tableData tr[class*=tdata]'));
+          const frames = Array.from(document.querySelectorAll('iframe')).map(f => ({ id: f.id, src: f.src?.slice(0, 80), visible: f.offsetWidth > 0 }));
+          return { taskRowsFound: taskRows.length, iframes: frames, bodySnippet: document.body?.innerText?.slice(0, 200) };
+        }).catch(() => null);
+        throw new CommandExecutionError(`BONC OA todos extraction returned 0 rows after retries. Debug: ${JSON.stringify(debug)}`);
+      }
+      return rows.slice(0, limit);
+    };
+
+    return extractWithRetry();
   },
 });
