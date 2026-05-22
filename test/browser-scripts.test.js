@@ -31,8 +31,9 @@ describe('browser todos scripts', () => {
 
     assert.match(source, /#tableData tr\.tdata/);
     assert.match(source, /replace\(\/\^tr-/);
-    assert.match(source, /searchParams\.delete\('sid'\)/);
-    assert.match(source, /taskInstId/);
+    assert.match(source, /type: cells\[4\]/);
+    assert.doesNotMatch(source, /url:/);
+    assert.doesNotMatch(source, /applicant:/);
     assert.match(source, /workbench frames are expected to be same-origin/);
   });
 

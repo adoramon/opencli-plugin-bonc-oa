@@ -40,7 +40,7 @@ export const todosCommand = cli({
     ...LOGIN_ARGS,
     { name: 'limit', type: 'int', default: 20, help: 'Number of pending tasks to return (1-100)' },
   ],
-  columns: ['rank', 'taskId', 'title', 'flowName', 'applicant', 'receivedAt', 'status', 'url'],
+  columns: ['taskId', 'title', 'type', 'receivedAt'],
   func: async (page, kwargs) => {
     const limit = normalizeLimit(kwargs.limit);
     await gotoUnlessAlreadyOa(page, process.env.BONC_OA_TODO_LIST_URL || getBaseUrl(), { waitUntil: 'load', settleMs: 4000 });
