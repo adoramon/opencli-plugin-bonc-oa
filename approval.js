@@ -1,13 +1,9 @@
-import { CommandExecutionError, ArgumentError } from '@jackwener/opencli/errors';
+import { ArgumentError } from '@jackwener/opencli/errors';
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import { OA_BROWSER_OPTIONS } from './lib/command-options.js';
 import { normalizeApprovalArgs, resolveTaskUrl, SITE } from './lib/validation.js';
 import { approvalScript, detailScript } from './lib/browser-scripts.js';
 import { ensureLoggedIn, LOGIN_ARGS } from './lib/session.js';
-
-function resolveTodoUrl(taskId) {
-  return resolveTaskUrl(taskId);
-}
 
 function normalize(kwargs, action) {
   try {
@@ -19,39 +15,51 @@ function normalize(kwargs, action) {
 
 async function runApproval(page, kwargs, action) {
   const data = normalize(kwargs, action);
-  await page.goto(resolveTodoUrl(data.taskId), { waitUntil: 'load', settleMs: 4000 });
-  await ensureLoggedIn(page, kwargs);
-  const detailRows = await page.evaluate(detailScript(data.taskId));
-  const detail = Array.isArray(detailRows) ? detailRows[0] : {};
-  if (!data.confirm) {
-    return [{
-      taskId: data.taskId,
+  const results = [];
+
+  for (const taskId of data.taskIds) {
+    await page.goto(resolveTaskUrl(taskId), { waitUntil: 'load', settleMs: 4000 });
+    await ensureLoggedIn(page, kwargs);
+    const detailRows = await page.evaluate(detailScript(taskId));
+    const detail = Array.isArray(detailRows) ? detailRows[0] : {};
+    if (!data.confirm) {
+      results.push({
+        taskId,
+        action,
+        confirmed: false,
+        status: 'preview',
+        message: `${action} preview only; rerun with --confirm true to submit. ${detail?.title || ''}`.trim(),
+        url: detail?.url || resolveTaskUrl(taskId),
+      });
+      continue;
+    }
+    const result = await page.evaluate(approvalScript(action, data.comment, true));
+    if (!result?.ok || result.status !== 'submitted') {
+      results.push({
+        taskId,
+        action,
+        confirmed: false,
+        status: 'failed',
+        message: `BONC OA ${action} was not confirmed: ${result?.reason || 'unknown-state'}`,
+        url: result?.url || detail?.url || resolveTaskUrl(taskId),
+      });
+      continue;
+    }
+    results.push({
+      taskId,
       action,
-      confirmed: false,
-      status: 'preview',
-      message: `${action} preview only; rerun with --confirm true to submit. ${detail?.title || ''}`.trim(),
-      url: detail?.url || resolveTodoUrl(data.taskId),
-    }];
+      confirmed: true,
+      status: 'submitted',
+      message: `${action} submitted`,
+      url: result.url || detail?.url || resolveTaskUrl(taskId),
+    });
   }
-  const result = await page.evaluate(approvalScript(action, data.comment, true));
-  if (!result?.ok || result.status !== 'submitted') {
-    throw new CommandExecutionError(
-      `BONC OA ${action} was not confirmed: ${result?.reason || 'unknown-state'}`,
-      `Open ${result?.url || detail?.url || resolveTodoUrl(data.taskId)} and verify whether the workflow was processed.`,
-    );
-  }
-  return [{
-    taskId: data.taskId,
-    action,
-    confirmed: true,
-    status: 'submitted',
-    message: `${action} submitted`,
-    url: result.url || detail?.url || resolveTodoUrl(data.taskId),
-  }];
+  return results;
 }
 
 const approvalArgs = [
-  { name: 'taskId', required: true, positional: true, help: 'Task id or task detail URL' },
+  { name: 'taskId', help: 'Single task id or task detail URL (mutually exclusive with --task-ids)' },
+  { name: 'taskIds', help: 'Comma-separated task ids (mutually exclusive with --task-id)' },
   ...LOGIN_ARGS,
   { name: 'comment', help: 'Approval comment' },
   { name: 'confirm', type: 'bool', default: false, help: 'Actually submit the workflow action. Default is preview only.' },
@@ -62,7 +70,7 @@ export const approveCommand = cli({
   site: SITE,
   name: 'approve',
   access: 'write',
-  description: 'Approve one BONC OA pending task; preview unless --confirm true is passed',
+  description: 'Approve one or more BONC OA pending tasks; preview unless --confirm true is passed',
   domain: 'oa.bonc.com.cn',
   strategy: Strategy.COOKIE,
   browser: true,
@@ -76,7 +84,7 @@ export const rejectCommand = cli({
   site: SITE,
   name: 'reject',
   access: 'write',
-  description: 'Reject one BONC OA pending task; preview unless --confirm true is passed',
+  description: 'Reject one or more BONC OA pending tasks; preview unless --confirm true is passed',
   domain: 'oa.bonc.com.cn',
   strategy: Strategy.COOKIE,
   browser: true,
